@@ -70,7 +70,7 @@ function migrate(){
 load();
 migrate();
 
-const ui = {tab:'home', ym: new Date().toISOString().slice(0,7), filter:'all', q:''};
+const ui = {tab:'home', ym: new Date().toISOString().slice(0,7), filter:'all', q:'', f:{}, back:'home'};
 
 // ---------- Utilidades ----------
 const $ = s=>document.querySelector(s);
@@ -193,26 +193,57 @@ function viewHome(){
   ${pend.length?`<button class="card" data-act="reimb-open" style="text-align:left;width:100%;border:1.5px solid var(--brand)"><div class="between"><div><h3 style="margin:0 0 4px">💼 Reembolsos a receber</h3><b style="font-size:1.4rem">${brl(pendTot)}</b> <span class="muted small">· ${pend.length} compra(s)</span></div><span class="tag" style="background:var(--brand);color:var(--brand-ink)">Registrar</span></div></button>`:''}
   ${T.in+T.out+T.inv===0 ? `<div class="card empty"><b>🌱</b>Nada lançado em ${ymLabel(ym)}.<br>Toque no <b style="display:inline;font-size:1rem">+</b> para começar.</div>`:''}
   ${alerts.length?`<section class="card"><h3>⚠ Atenção ao orçamento</h3>${alerts.map(a=>{const over=a.v>a.l;return `<div class="between small" style="padding:4px 0"><span>${cat(a.id).ico} ${esc(cat(a.id).name)}</span><b class="${over?'bad':'warn'}">${over?'estourou ':'quase '}${brl0(a.v)} / ${brl0(a.l)}</b></div>`}).join('')}</section>`:''}
-  ${parts.length?`<section class="card"><h3>Para onde foi o dinheiro</h3><div class="donutbox">${donut(parts)}<div class="legend">${parts.map(p=>`<div><i style="background:${p.color}"></i><span>${esc(p.name)}</span><b>${pct(p.v/T.out)}</b></div>`).join('')}</div></div></section>`:''}
-  ${cards.length?`<section class="card"><h3>Faturas dos cartões</h3>${cards.map(p=>`<div class="between" style="padding:6px 0"><span>${p.ico} ${esc(p.name)}</span><b>${brl(T.byPay[p.id])}</b></div>`).join('')}</section>`:''}
-  ${future.some(f=>f.v>0)?`<section class="card"><h3>Já comprometido nas próximas faturas</h3>${future.map(f=>`<div class="between" style="padding:6px 0"><span style="text-transform:capitalize">${ymLabel(f.ym)}</span><b>${brl(f.v)}</b></div>`).join('')}</section>`:''}
+  ${parts.length?`<button class="card" data-act="go-cats" style="text-align:left;width:100%"><div class="between"><h3 style="margin:0 0 10px">Para onde foi o dinheiro</h3><span class="muted small">Detalhar ›</span></div><div class="donutbox">${donut(parts)}<div class="legend">${parts.map(p=>`<div><i style="background:${p.color}"></i><span>${esc(p.name)}</span><b>${pct(p.v/T.out)}</b></div>`).join('')}</div></div></button>`:''}
+  ${cards.length?`<section class="card"><div class="between"><h3>Faturas dos cartões</h3><span class="muted small">Ver lista ›</span></div>${cards.map(p=>`<button class="between" data-act="go-pay" data-id="${p.id}" style="padding:10px 0;width:100%;border-top:1px solid var(--line)"><span>${p.ico} ${esc(p.name)}</span><b>${brl(T.byPay[p.id])} ›</b></button>`).join('')}</section>`:''}
+  ${future.some(f=>f.v>0)?`<button class="card" data-act="go-future" style="text-align:left;width:100%"><div class="between"><h3>Já comprometido nas próximas faturas</h3><span class="muted small">Ver lista ›</span></div>${future.map(f=>`<div class="between" style="padding:6px 0"><span style="text-transform:capitalize">${ymLabel(f.ym)}</span><b>${brl(f.v)}</b></div>`).join('')}</button>`:''}
   ${last.length?`<section class="card"><h3>Últimos lançamentos</h3><div class="list">${last.map(itemRow).join('')}</div><button class="btn ghost" style="margin-top:10px" data-tab-go="tx">Ver todos</button></section>`:''}`;
 }
 
 function viewTx(){
-  let list = monthTx(ui.ym);
+  const f = ui.f||{}, active = f.cat||f.pay||f.future;
+  let list = f.future ? [1,2,3].flatMap(k=>monthTx(shiftYm(ui.ym,k))).filter(t=>t.type==='out'&&isCard(t.pay)) : monthTx(ui.ym);
+  if(f.cat) list = list.filter(t=>t.cat===f.cat);
+  if(f.pay) list = list.filter(t=>t.pay===f.pay);
   if(ui.filter!=='all') list = list.filter(t=>t.type===ui.filter);
   const q = ui.q.trim().toLowerCase();
   if(q) list = list.filter(t=> (t.note||'').toLowerCase().includes(q) || cat(t.cat).name.toLowerCase().includes(q));
-  list.sort((a,b)=>b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-  const groups = {}; list.forEach(t=>(groups[t.date]=groups[t.date]||[]).push(t));
+  list.sort(f.future ? (a,b)=>cm(a).localeCompare(cm(b)) || b.date.localeCompare(a.date) : (a,b)=>b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  const key = t => f.future ? cm(t) : t.date;
+  const groups = {}; list.forEach(t=>(groups[key(t)]=groups[key(t)]||[]).push(t));
   const F=[['all','Todos'],['out','Saídas'],['in','Entradas'],['inv','Investimentos']];
+  const title = f.future ? 'Compras nas próximas faturas' : [f.cat&&cat(f.cat).name, f.pay&&('Fatura '+pay(f.pay).name)].filter(Boolean).join(' · ');
+  const sum = list.reduce((a,t)=>a+(t.type==='in'?0:t.amount),0);
   return `
-  <button class="btn ghost" data-act="imp-open">📥 Importar fatura do cartão (PDF)</button>
+  ${active?`<div class="card-box"><button class="chip" data-act="back-f" style="margin-bottom:8px">‹ Voltar</button>
+    <div class="between"><div><b>${esc(title)}</b><div class="small muted">${f.future?'próximos 3 meses':ymLabel(ui.ym)} · ${list.length} lançamento(s)</div></div><b style="font-size:1.2rem">${brl(sum)}</b></div>
+    <button class="chip" data-act="clear-f" style="margin-top:8px">✕ Ver todos os lançamentos</button></div>`
+   :`<button class="btn ghost" data-act="imp-open">📥 Importar fatura do cartão (PDF)</button>`}
   <input type="search" id="q" placeholder="🔍 Buscar lançamento ou categoria" value="${esc(ui.q)}">
   <div class="chips">${F.map(([k,l])=>`<button class="chip ${ui.filter===k?'on':''}" data-filter="${k}">${l}</button>`).join('')}</div>
-  ${list.length? Object.entries(groups).map(([d,items])=>`<div class="daytitle">${fmtDay(d)}</div><div class="card"><div class="list">${items.map(itemRow).join('')}</div></div>`).join('')
+  ${list.length? Object.entries(groups).map(([g,items])=>`<div class="daytitle">${f.future?`<span style="text-transform:capitalize">${ymLabel(g)}</span> · ${brl(items.reduce((a,t)=>a+t.amount,0))}`:fmtDay(g)}</div><div class="card"><div class="list">${items.map(itemRow).join('')}</div></div>`).join('')
    : `<div class="card empty"><b>🧾</b>Nenhum lançamento encontrado.</div>`}`;
+}
+
+function viewCats(){
+  const T=totals(ui.ym), P=totals(shiftYm(ui.ym,-1));
+  const rows=Object.entries(T.byCat).filter(([id])=>cat(id).type==='out').sort((a,b)=>b[1]-a[1]);
+  const cnt={}; monthTx(ui.ym).forEach(t=>{ if(t.type==='out') cnt[t.cat]=(cnt[t.cat]||0)+1; });
+  const parts=rows.slice(0,7).map(([id,v])=>({v,color:cat(id).color}));
+  const rest=rows.slice(7).reduce((a,[,v])=>a+v,0); if(rest>0) parts.push({v:rest,color:'#94a3b8'});
+  const max=rows.length?rows[0][1]:1;
+  return `
+  <button class="chip" data-act="go-home" style="align-self:flex-start">‹ Início</button>
+  <section class="card"><h3>Gasto por categoria · ${ymLabel(ui.ym)}</h3>
+    ${rows.length?`<div class="donutbox">${donut(parts)}<div class="legend"><div><span>Fixos</span><b>${brl0(T.fixed)}</b></div><div><span>Variáveis</span><b>${brl0(T.variable)}</b></div><div><span>Total</span><b>${brl0(T.out)}</b></div></div></div>`:'<div class="empty">Sem gastos neste mês.</div>'}
+    <p class="small muted" style="margin:10px 0 0">Toque numa categoria para ver os lançamentos do mês.</p></section>
+  ${rows.length?`<section class="card"><div class="list">${rows.map(([id,v])=>{
+    const c=cat(id), p=P.byCat[id]||0, up=v>p;
+    const delta = p ? `<span class="${up?'bad':'in'}">${up?'↑':'↓'} ${Math.abs(Math.round((v-p)/p*100))}% vs mês anterior</span>` : '<span class="muted">sem gasto no mês anterior</span>';
+    const lim=S.budget[id];
+    return `<button class="item" data-act="go-cat" data-id="${id}" style="display:block">
+      <div class="between"><span><b>${c.ico} ${esc(c.name)}</b></span><span><b>${brl(v)}</b> <span class="muted small">${pct(T.out?v/T.out:0)} ›</span></span></div>
+      <div class="meter" style="margin-top:6px"><i style="width:${v/max*100}%;background:${c.color}"></i></div>
+      <div class="small muted" style="margin-top:4px">${cnt[id]||0} lançamento(s) · ${delta}${lim?` · limite ${brl0(lim)}`:''}</div></button>`;}).join('')}</div></section>`:''}`;
 }
 
 function viewBudget(){
@@ -269,12 +300,12 @@ function viewStats(){
     <div class="meter" style="margin-top:6px"><i style="width:${v/catRows[0][1]*100}%;background:${cat(k).color}"></i></div></div>`).join('')||'<div class="empty">Sem dados neste ano.</div>'}</div></section>`;
 }
 
-const VIEWS = {home:viewHome, tx:viewTx, budget:viewBudget, stats:viewStats, settings:viewSettings};
+const VIEWS = {home:viewHome, tx:viewTx, budget:viewBudget, stats:viewStats, settings:viewSettings, cats:viewCats};
 function render(){
   $('#monthLabel').textContent = ymLabel(ui.ym);
   $('.monthnav').style.visibility = ui.tab==='settings' ? 'hidden' : 'visible';
   $('#view').innerHTML = VIEWS[ui.tab]();
-  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('on', b.dataset.tab===ui.tab));
+  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('on', b.dataset.tab===(ui.tab==='cats'?'home':ui.tab)));
   const q=$('#q'); if(q) q.oninput = e=>{ ui.q=e.target.value; const pos=e.target.selectionStart; render(); const n=$('#q'); n.focus(); n.setSelectionRange(pos,pos); };
   applyTheme();
 }
@@ -634,8 +665,8 @@ function importGo(){
 document.addEventListener('click', e=>{
   const el = e.target.closest('[data-act],[data-tab],[data-tab-go],[data-filter],[data-year],[data-ftype],[data-fcat],[data-fpay],[data-compstep],[data-pick],[data-theme],[data-cico],[data-ccolor],[data-ctype],[data-cfixed],[data-creimb],[data-pico],[data-pkind]');
   if(!el) return; const d = el.dataset;
-  if(d.tab){ ui.tab=d.tab; render(); window.scrollTo(0,0); return; }
-  if(d.tabGo){ ui.tab=d.tabGo; render(); window.scrollTo(0,0); return; }
+  if(d.tab){ ui.f={}; ui.tab=d.tab; render(); window.scrollTo(0,0); return; }
+  if(d.tabGo){ ui.f={}; ui.tab=d.tabGo; render(); window.scrollTo(0,0); return; }
   if(d.filter){ ui.filter=d.filter; render(); return; }
   if(d.year){ ui.ym = d.year+'-'+ui.ym.slice(5); render(); return; }
   if(d.ftype){ readDraft(); draft.type=d.ftype; draft.cat=null; drawTxForm(); return; }
@@ -660,6 +691,13 @@ document.addEventListener('click', e=>{
     case 'add': openTxForm(); break;
     case 'edit': openTxForm(d.id); break;
     case 'save-tx': saveTx(); break;
+    case 'go-cats': ui.tab='cats'; render(); window.scrollTo(0,0); break;
+    case 'go-home': ui.tab='home'; render(); window.scrollTo(0,0); break;
+    case 'go-cat': ui.f={cat:d.id}; ui.back='cats'; ui.filter='all'; ui.q=''; ui.tab='tx'; render(); window.scrollTo(0,0); break;
+    case 'go-pay': ui.f={pay:d.id}; ui.back='home'; ui.filter='all'; ui.q=''; ui.tab='tx'; render(); window.scrollTo(0,0); break;
+    case 'go-future': ui.f={future:true}; ui.back='home'; ui.filter='all'; ui.q=''; ui.tab='tx'; render(); window.scrollTo(0,0); break;
+    case 'back-f': ui.f={}; ui.tab=ui.back||'home'; render(); window.scrollTo(0,0); break;
+    case 'clear-f': ui.f={}; render(); break;
     case 'reimb-open': openReimb(); break;
     case 'rb-all': { const l=pendingReimb(); rb.date=$('#rb-date').value||rb.date; rb.sel = rb.sel.size===l.length ? new Set() : new Set(l.map(t=>t.id)); drawReimb(); break; }
     case 'rb-go': reimbGo(); break;
