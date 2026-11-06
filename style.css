@@ -117,3 +117,6 @@ th{color:var(--muted);font-size:.7rem;text-transform:uppercase}
 .imp-row select{margin-top:6px;padding:9px 10px;font-size:.9rem}
 .imp-row.need select{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 8%,var(--card))}
 .imp-row.off{opacity:.5}
+.imp-amt{width:96px;padding:4px 8px;text-align:right;font-weight:700;border-radius:8px}
+.imp-title{flex:1;min-width:0;padding:4px 8px;font-weight:700;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink);font:inherit;font-weight:700}
+.imp-title:focus{border-color:var(--line);background:var(--card)}

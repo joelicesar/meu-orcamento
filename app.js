@@ -65,6 +65,8 @@ function migrate(){
   if(!S.mig) S.mig = {};
   if(!S.mig.trabalho){ if(!S.cats.some(c=>c.id==='trabalho')) S.cats.push({...DEFAULT_CATS.find(c=>c.id==='trabalho')}); S.mig.trabalho=1; }
   if(!S.rules) S.rules = {};
+  S.rules = Object.fromEntries(Object.entries(S.rules).map(([k,v])=>[k.replace(/ /g,''),v]));
+  if(!S.paid) S.paid = {};
   save();
 }
 load();
@@ -194,34 +196,9 @@ function viewHome(){
   ${T.in+T.out+T.inv===0 ? `<div class="card empty"><b>🌱</b>Nada lançado em ${ymLabel(ym)}.<br>Toque no <b style="display:inline;font-size:1rem">+</b> para começar.</div>`:''}
   ${alerts.length?`<section class="card"><h3>⚠ Atenção ao orçamento</h3>${alerts.map(a=>{const over=a.v>a.l;return `<div class="between small" style="padding:4px 0"><span>${cat(a.id).ico} ${esc(cat(a.id).name)}</span><b class="${over?'bad':'warn'}">${over?'estourou ':'quase '}${brl0(a.v)} / ${brl0(a.l)}</b></div>`}).join('')}</section>`:''}
   ${parts.length?`<button class="card" data-act="go-cats" style="text-align:left;width:100%"><div class="between"><h3 style="margin:0 0 10px">Para onde foi o dinheiro</h3><span class="muted small">Detalhar ›</span></div><div class="donutbox">${donut(parts)}<div class="legend">${parts.map(p=>`<div><i style="background:${p.color}"></i><span>${esc(p.name)}</span><b>${pct(p.v/T.out)}</b></div>`).join('')}</div></div></button>`:''}
-  ${cards.length?`<section class="card"><div class="between"><h3>Faturas dos cartões</h3><span class="muted small">Ver lista ›</span></div>${cards.map(p=>`<button class="between" data-act="go-pay" data-id="${p.id}" style="padding:10px 0;width:100%;border-top:1px solid var(--line)"><span>${p.ico} ${esc(p.name)}</span><b>${brl(T.byPay[p.id])} ›</b></button>`).join('')}</section>`:''}
+  ${cards.length?`<section class="card"><div class="between"><h3>Faturas dos cartões</h3><span class="muted small">Ver lista ›</span></div>${cards.map(p=>`<button class="between" data-act="go-pay" data-id="${p.id}" style="padding:10px 0;width:100%;border-top:1px solid var(--line)"><span>${p.ico} ${esc(p.name)}${paidInfo(p.id,ym)?' <span class="in small">✓ paga</span>':''}</span><b>${brl(T.byPay[p.id])} ›</b></button>`).join('')}</section>`:''}
   ${future.some(f=>f.v>0)?`<button class="card" data-act="go-future" style="text-align:left;width:100%"><div class="between"><h3>Já comprometido nas próximas faturas</h3><span class="muted small">Ver lista ›</span></div>${future.map(f=>`<div class="between" style="padding:6px 0"><span style="text-transform:capitalize">${ymLabel(f.ym)}</span><b>${brl(f.v)}</b></div>`).join('')}</button>`:''}
   ${last.length?`<section class="card"><h3>Últimos lançamentos</h3><div class="list">${last.map(itemRow).join('')}</div><button class="btn ghost" style="margin-top:10px" data-tab-go="tx">Ver todos</button></section>`:''}`;
-}
-
-function viewTx(){
-  const f = ui.f||{}, active = f.cat||f.pay||f.future;
-  let list = f.future ? [1,2,3].flatMap(k=>monthTx(shiftYm(ui.ym,k))).filter(t=>t.type==='out'&&isCard(t.pay)) : monthTx(ui.ym);
-  if(f.cat) list = list.filter(t=>t.cat===f.cat);
-  if(f.pay) list = list.filter(t=>t.pay===f.pay);
-  if(ui.filter!=='all') list = list.filter(t=>t.type===ui.filter);
-  const q = ui.q.trim().toLowerCase();
-  if(q) list = list.filter(t=> (t.note||'').toLowerCase().includes(q) || cat(t.cat).name.toLowerCase().includes(q));
-  list.sort(f.future ? (a,b)=>cm(a).localeCompare(cm(b)) || b.date.localeCompare(a.date) : (a,b)=>b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-  const key = t => f.future ? cm(t) : t.date;
-  const groups = {}; list.forEach(t=>(groups[key(t)]=groups[key(t)]||[]).push(t));
-  const F=[['all','Todos'],['out','Saídas'],['in','Entradas'],['inv','Investimentos']];
-  const title = f.future ? 'Compras nas próximas faturas' : [f.cat&&cat(f.cat).name, f.pay&&('Fatura '+pay(f.pay).name)].filter(Boolean).join(' · ');
-  const sum = list.reduce((a,t)=>a+(t.type==='in'?0:t.amount),0);
-  return `
-  ${active?`<div class="card-box"><button class="chip" data-act="back-f" style="margin-bottom:8px">‹ Voltar</button>
-    <div class="between"><div><b>${esc(title)}</b><div class="small muted">${f.future?'próximos 3 meses':ymLabel(ui.ym)} · ${list.length} lançamento(s)</div></div><b style="font-size:1.2rem">${brl(sum)}</b></div>
-    <button class="chip" data-act="clear-f" style="margin-top:8px">✕ Ver todos os lançamentos</button></div>`
-   :`<button class="btn ghost" data-act="imp-open">📥 Importar fatura do cartão (PDF)</button>`}
-  <input type="search" id="q" placeholder="🔍 Buscar lançamento ou categoria" value="${esc(ui.q)}">
-  <div class="chips">${F.map(([k,l])=>`<button class="chip ${ui.filter===k?'on':''}" data-filter="${k}">${l}</button>`).join('')}</div>
-  ${list.length? Object.entries(groups).map(([g,items])=>`<div class="daytitle">${f.future?`<span style="text-transform:capitalize">${ymLabel(g)}</span> · ${brl(items.reduce((a,t)=>a+t.amount,0))}`:fmtDay(g)}</div><div class="card"><div class="list">${items.map(itemRow).join('')}</div></div>`).join('')
-   : `<div class="card empty"><b>🧾</b>Nenhum lançamento encontrado.</div>`}`;
 }
 
 function viewCats(){
@@ -578,18 +555,11 @@ function parseFatura(text){
     if(im && +im[3]>=2 && +im[2]>=1 && +im[2]<=+im[3]){ title=im[1]; k=+im[2]; n=+im[3]; inst=k+'/'+n; }
     const mk = normMerchant(title);
     const base = `${mk}|${date}|${amount}|${inst||''}`; seen[base]=(seen[base]||0)+1;
-    rows.push({id:rows.length, date, title, amount, inst, k, n, mk, key:'I|'+base+'|'+seen[base]});
+    rows.push({id:rows.length, date, title, amount, inst, k, n, mk, cnt:seen[base]});
   }
-  return {rows, ignored, total: tm?toNum(tm[1]):null, stmtDate: sd?`${sd[3]}-${sd[2]}-${sd[1]}`:null};
+  return {rows, ignored, bank:'bradesco', total: tm?toNum(tm[1]):null, stmtDate: sd?`${sd[3]}-${sd[2]}-${sd[1]}`:null};
 }
 function loadScript(src){ return new Promise((ok,err)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>err(new Error('Não consegui carregar o leitor de PDF. Conecte à internet uma vez e tente de novo.')); document.head.appendChild(s); }); }
-async function pdfText(file){
-  if(!window.pdfjsLib){ await loadScript('lib/pdf.min.js'); pdfjsLib.GlobalWorkerOptions.workerSrc='lib/pdf.worker.min.js'; }
-  const doc = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise, out=[];
-  for(let p=1;p<=doc.numPages;p++){ const tc = await (await doc.getPage(p)).getTextContent(); out.push(tc.items.map(i=>i.str).join(' ')); }
-  return out.join(' ');
-}
-
 let imp;
 function openImport(){
   const cards = S.pays.filter(p=>p.kind==='cartao'); if(!cards.length) return toast('Cadastre um cartão em Ajustes primeiro');
@@ -605,14 +575,125 @@ function drawImportStart(msg){
   <label class="btn" for="f-pdf" style="display:block;text-align:center">Escolher o PDF da fatura</label>
   <input type="file" id="f-pdf" accept="application/pdf,.pdf" hidden>`);
 }
+function importGo(){
+  const d=imp, sel=d.rows.filter(r=>r.include);
+  if(!sel.length) return toast('Nenhum lançamento selecionado');
+  if(sel.some(r=>!r.cat)){ d.only=true; drawImportReview(); return toast('Classifique todos os lançamentos marcados'); }
+  S.rules = S.rules||{}; let n=0;
+  for(const r of sel){
+    S.rules[rk(r)] = r.cat;
+    const grp = r.future ? uid() : undefined;
+    const mk = (extra)=>({id:uid(),date:r.date,type:'out',cat:r.cat,amount:r.amount,pay:d.pay,note:r.title,...extra});
+    S.tx.push(mk({comp:d.comp, inst:r.inst||undefined, grp, imp:keyOf(r)})); n++;
+    if(r.future) for(let j=r.k+1;j<=r.n;j++){ S.tx.push(mk({comp:shiftYm(d.comp,j-r.k), inst:j+'/'+r.n, grp, imp:`F|${r.mk}|${j}/${r.n}|${r.amount}`})); n++; }
+  }
+  save(); closeSheet(); ui.tab='tx'; ui.ym=d.comp; render(); toast(`${n} lançamentos importados na fatura de ${ymLabel(d.comp)} ✓`);
+}
+
+// ---------- Leitura de PDF: texto, OCR e fatura Santander ----------
+const keyOf = r => `I|${r.mk}|${r.date}|${r.amount}|${r.inst||''}|${r.cnt}`;
+const rk = r => r.mk.replace(/ /g,''); // chave das regras de categoria: ignora espaços (o OCR às vezes junta palavras)
+const fmtNum = v => v.toFixed(2).replace('.',',');
+const dateYear = (dd,mm) => { const now=new Date(); let y=now.getFullYear(); if(new Date(y,mm-1,dd) > new Date(now.getTime()+45*864e5)) y--; return y; };
+
+async function loadPdfJs(){ if(!window.pdfjsLib){ await loadScript('lib/pdf.min.js'); pdfjsLib.GlobalWorkerOptions.workerSrc='lib/pdf.worker.min.js'; } }
+async function pdfTextLines(file){
+  await loadPdfJs();
+  const doc = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise, all=[], lines=[];
+  for(let p=1;p<=doc.numPages;p++){
+    const tc = await (await doc.getPage(p)).getTextContent(), byY={};
+    all.push(tc.items.map(i=>i.str).join(' '));
+    tc.items.forEach(i=>{ if(!i.str.trim()) return; const y=Math.round(i.transform[5]/4); (byY[y]=byY[y]||[]).push(i); });
+    Object.keys(byY).map(Number).sort((a,b)=>b-a).forEach(y=>lines.push(byY[y].sort((a,b)=>a.transform[4]-b.transform[4]).map(i=>i.str).join(' ')));
+  }
+  return {text: all.join(' '), lines};
+}
+// Faturas "desenhadas" (sem texto no PDF): renderiza a página ampliada, deixa só preto e branco e reconhece o texto (OCR, no próprio aparelho).
+async function ocrPdf(file, onProg){
+  await loadPdfJs(); if(!window.Tesseract) await loadScript('lib/ocr/tesseract.min.js');
+  const doc = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise, u = p=>new URL(p,location.href).href, n = Math.min(doc.numPages,6), out=[];
+  let cur=1;
+  const w = await Tesseract.createWorker('eng',1,{workerPath:u('lib/ocr/worker.min.js'),corePath:u('lib/ocr'),langPath:u('lib/ocr'),
+    logger:m=>{ if(m.status==='recognizing text') onProg(`Reconhecendo o texto (página ${cur}/${n}) · ${Math.round(m.progress*100)}%`); }});
+  await w.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
+  for(let p=1;p<=n;p++){
+    cur=p; onProg(`Preparando a página ${p}/${n}…`);
+    const page = await doc.getPage(p), b = page.getViewport({scale:1}), v = page.getViewport({scale:Math.min(4, 3600/Math.max(b.width,b.height))});
+    const c = document.createElement('canvas'); c.width=v.width; c.height=v.height;
+    const cx = c.getContext('2d',{willReadFrequently:true}); cx.fillStyle='#fff'; cx.fillRect(0,0,c.width,c.height);
+    await page.render({canvasContext:cx,viewport:v}).promise;
+    const im = cx.getImageData(0,0,c.width,c.height), a = im.data;
+    for(let i=0;i<a.length;i+=4){ const g=.299*a[i]+.587*a[i+1]+.114*a[i+2], x=g<170?0:255; a[i]=a[i+1]=a[i+2]=x; }
+    cx.putImageData(im,0,0);
+    out.push((await w.recognize(c)).data.text);
+  }
+  await w.terminate();
+  return out.join('\n');
+}
+
+// Fatura Santander: linhas "dd/mm DESCRIÇÃO [parcela k/N] valor [US$]". Funciona com texto do PDF ou saída do OCR.
+function parseSantander(text){
+  const rows=[], ignored=[], seen={}; let lastDate=null;
+  for(const raw of text.split('\n')){
+    const line = raw.replace(/\s+/g,' ').trim(); if(!line) continue;
+    const iof = line.match(/(?:^|\s)[I1l]?[O0]F DESPESA NO EXTERIOR\s+(\d{1,3}(?:\.\d{3})*(?:,\d{2}|\d{2}))\s*$/i);
+    if(iof && lastDate){
+      const g=iof[1], amount = g.includes(',') ? toNum(g) : parseInt(g.replace(/\./g,''),10)/100;
+      const mk='IOF DESPESA NO EXTERIOR', base=`${mk}|${lastDate}|${amount}|`; seen[base]=(seen[base]||0)+1;
+      rows.push({id:rows.length,date:lastDate,title:'IOF despesa no exterior',amount,inst:null,k:0,n:0,mk,cnt:seen[base]});
+      continue;
+    }
+    const m = line.match(/^.{0,6}?(\d{2})\/(\d{2})\s+(.+)$/); if(!m || +m[1]<1 || +m[1]>31 || +m[2]<1 || +m[2]>12) continue;
+    const a = m[3].match(new RegExp('^(.+?)\\s+(?:(\\d{1,2})/(\\d{1,2})\\s+)?('+NUM+')(?:\\s|$)')); if(!a) continue;
+    const desc = a[1].replace(/[\s\-–|]+$/,'').trim(), amount = toNum(a[4]);
+    if(!desc || desc.length>60) continue;
+    if(/PAGAMENTO/i.test(desc) || amount<0){ ignored.push(`${m[1]}/${m[2]} ${desc} (${brl(amount)})`); continue; }
+    if(amount===0){ ignored.push(`${m[1]}/${m[2]} ${desc} (R$ 0,00)`); continue; }
+    const date = `${dateYear(+m[1],+m[2])}-${m[2]}-${m[1]}`; lastDate = date;
+    let inst=null,k=0,n=0; if(a[2] && +a[3]>=2 && +a[2]>=1 && +a[2]<=+a[3]){ k=+a[2]; n=+a[3]; inst=k+'/'+n; }
+    const mk = normMerchant(desc), base=`${mk}|${date}|${amount}|${inst||''}`; seen[base]=(seen[base]||0)+1;
+    rows.push({id:rows.length,date,title:desc,amount,inst,k,n,mk,cnt:seen[base]});
+  }
+  const tm = text.match(new RegExp('Saldo\\s*Desta\\s*Fatura\\D{0,30}?('+NUM+')','i'));
+  return {rows, ignored, total: tm?toNum(tm[1]):null, stmtDate:null, bank:'santander'};
+}
+
+// Fatura Mercado Pago (PDF com texto): "dd/mm DESCRIÇÃO [Parcela k de N] R$ valor", em um ou mais cartões. A competência é o mês do vencimento.
+function parseMercadoPago(text){
+  text = text.replace(/\s+/g,' ');
+  const vm = text.match(/Vencimento:\s*(\d{2})\/(\d{2})\/(\d{4})/); if(!vm) return {rows:[]};
+  const a = text.search(/Detalhes de consumo|Movimentações na fatura/), b = text.search(/Parcele a fatura do seu/);
+  const body = text.slice(a>=0?a:0, b>a?b:undefined);
+  const re = new RegExp('(\\d{2})/(\\d{2}) (.+?)(?: Parcela (\\d+) de (\\d+))? R\\$ ('+NUM+')(?= |$)','g');
+  const tm = text.match(new RegExp('Total a pagar\\s*R\\$\\s*('+NUM+')'));
+  const rows=[], ignored=[], seen={}; let m;
+  while((m=re.exec(body))){
+    const desc=m[3].trim(), amount=toNum(m[6]);
+    if(!desc || desc.length>60 || /^a \d{2}\/\d{2}$/.test(desc)) continue;
+    if(/^Pagamento|^Estorno|^Cr[eé]dito/i.test(desc) || amount<=0){ ignored.push(`${m[1]}/${m[2]} ${desc} (${brl(amount)})`); continue; }
+    const date = `${+m[2]>+vm[2] ? +vm[3]-1 : +vm[3]}-${m[2]}-${m[1]}`;
+    let inst=null,k=0,n=0; if(m[4] && +m[5]>=2 && +m[4]>=1 && +m[4]<=+m[5]){ k=+m[4]; n=+m[5]; inst=k+'/'+n; }
+    const mk=normMerchant(desc), base=`${mk}|${date}|${amount}|${inst||''}`; seen[base]=(seen[base]||0)+1;
+    rows.push({id:rows.length,date,title:desc,amount,inst,k,n,mk,cnt:seen[base]});
+  }
+  return {rows, ignored, total: tm?toNum(tm[1]):null, stmtDate:null, bank:'mercado', comp:`${vm[3]}-${vm[2]}`};
+}
+
 async function importFile(file){
-  openSheet(`<h2>Lendo a fatura…</h2><p class="muted">Isso leva alguns segundos.</p>`);
+  openSheet(`<h2>Lendo a fatura…</h2><p class="muted" id="imp-prog">Isso leva alguns segundos.</p>`);
+  const prog = t => { const el=$('#imp-prog'); if(el) el.textContent=t; };
   try{
-    const r = parseFatura(await pdfText(file));
-    if(!r.rows.length) return drawImportStart('Não encontrei lançamentos neste PDF. Ele é uma fatura do Bradesco em PDF?');
+    let r=null, via='texto';
+    const {text,lines} = await pdfTextLines(file);
+    if(text.length>300){ r=parseFatura(text); if(!r.rows.length) r=parseMercadoPago(text); if(!r.rows.length) r=parseSantander(lines.join('\n')); }
+    if(!r || !r.rows.length){ prog('Esta fatura é uma imagem; lendo com reconhecimento de texto (OCR)…'); r=parseSantander(await ocrPdf(file,prog)); via='ocr'; }
+    if(!r.rows.length) return drawImportStart('Não encontrei lançamentos neste PDF. Ele é uma fatura do Bradesco, Santander ou Mercado Pago?');
+    const hint = S.pays.find(p=>p.kind==='cartao' && new RegExp(r.bank||'^$','i').test(p.name));
+    if(hint) imp.pay = hint.id;
     const known = new Set(S.tx.map(t=>t.imp).filter(Boolean));
     r.rows.forEach(w=>{
-      w.cat = (S.rules||{})[w.mk] && S.cats.some(c=>c.id===S.rules[w.mk]&&c.type==='out') ? S.rules[w.mk] : '';
+      w.key = keyOf(w);
+      w.cat = (S.rules||{})[rk(w)] && S.cats.some(c=>c.id===S.rules[rk(w)]&&c.type==='out') ? S.rules[rk(w)] : '';
       w.future = false; w.dup = '';
       if(known.has(w.key)) w.dup='já importado';
       else if(w.inst && S.tx.some(t=>t.imp && t.imp.startsWith(`F|${w.mk}|${w.inst}|${w.amount}`))) w.dup='parcela já prevista';
@@ -620,45 +701,92 @@ async function importFile(file){
       w.include = !w.dup;
       if(w.inst && w.k<w.n && !w.dup) w.future = true;
     });
-    Object.assign(imp,{rows:r.rows, ignored:r.ignored, total:r.total, only:false, comp: defaultComp(r.stmtDate||today(), imp.pay), fatDate:r.stmtDate});
+    const fm = file.name.match(/_(\d{2})(20\d{2})_/);
+    Object.assign(imp,{rows:r.rows, ignored:r.ignored, total:r.total, via, only:false,
+      comp: r.comp || (fm ? `${fm[2]}-${fm[1]}` : defaultComp(r.stmtDate||today(), imp.pay))});
     drawImportReview();
   }catch(e){ drawImportStart(e.message||'Não foi possível ler o PDF.'); }
 }
 function catOpts(sel){
   return S.cats.filter(c=>c.type==='out').map(c=>`<option value="${c.id}" ${sel===c.id?'selected':''}>${c.ico} ${esc(c.name)}${c.reimb?' (reembolsável)':''}</option>`).join('');
 }
+function impCheck(){
+  const d=imp, all=d.rows.reduce((a,r)=>a+r.amount,0);
+  if(d.total==null) return {cls:'muted', txt:`${d.rows.length} lançamentos lidos · soma ${brl(all)}`};
+  const ok=Math.abs(all-d.total)<0.015;
+  return {cls: ok?'muted':'warn', txt:`${d.rows.length} lançamentos lidos · soma ${brl(all)} · ${ok?'✓ confere com o total da fatura':`atenção: o total da fatura é ${brl(d.total)} (diferença de ${brl(all-d.total)})`}`};
+}
 function drawImportReview(){
-  const d=imp, sel=d.rows.filter(r=>r.include), miss=sel.filter(r=>!r.cat).length, sum=sel.reduce((a,r)=>a+r.amount,0);
-  const all=d.rows.reduce((a,r)=>a+r.amount,0), ok = d.total!=null && Math.abs(all-d.total)<0.015;
-  const view = d.only ? d.rows.filter(r=>r.include&&!r.cat) : d.rows;
+  const d=imp, sel=d.rows.filter(r=>r.include), miss=sel.filter(r=>!r.cat).length, sum=sel.reduce((a,r)=>a+r.amount,0), ck=impCheck();
+  const view = d.only ? d.rows.filter(r=>r.include&&!r.cat) : d.rows, ocr = d.via==='ocr';
   openSheet(`<h2>Conferir e classificar</h2>
   <div class="card-box"><div class="field" style="margin:0"><label>Competência da cobrança (mês da fatura)</label>
     <div class="stepper" style="margin:0"><button class="icon-btn" data-act="imp-comp" data-step="-1">‹</button><b>${ymLabel(d.comp)}</b><button class="icon-btn" data-act="imp-comp" data-step="1">›</button></div></div></div>
-  <p class="small ${ok||d.total==null?'muted':'warn'}" style="margin:0 0 8px">${d.rows.length} lançamentos lidos · ${brl(all)} ${d.total!=null?(ok?'· ✓ confere com o total da fatura':`· atenção: o total da fatura é ${brl(d.total)}`):''}</p>
+  ${ocr?`<p class="small warn" style="margin:0 0 8px">📷 Esta fatura é uma imagem e foi lida por reconhecimento de texto. Confira os valores; toque em um valor para corrigir.</p>
+  <div class="field"><label>Total da fatura no PDF (opcional, para conferir)</label><input id="imp-total" inputmode="decimal" placeholder="Ex.: 2.826,83" value="${d.total!=null?fmtNum(d.total):''}"></div>`:''}
+  <p class="small ${ck.cls}" id="imp-check" style="margin:0 0 8px">${ck.txt}</p>
   ${d.ignored.length?`<p class="small muted" style="margin:0 0 8px">Ignorado (não é compra): ${esc(d.ignored.join('; '))}</p>`:''}
   <div class="chips" style="margin-bottom:6px"><button class="chip ${d.only?'on':''}" data-act="imp-only">Só os sem categoria (${miss})</button><button class="chip" data-act="imp-allcheck">${sel.length===d.rows.length?'Desmarcar todos':'Marcar todos'}</button></div>
   <div class="card" style="padding:4px 12px"><div class="list">${view.map(r=>`<div class="imp-row ${r.include&&!r.cat?'need':''} ${r.include?'':'off'}">
     <input type="checkbox" data-imp-inc="${r.id}" ${r.include?'checked':''} aria-label="Importar">
-    <div class="t"><div class="between"><b>${esc(r.title)}${r.inst?` <span class="tag">${r.inst}</span>`:''}</b><b>${brl(r.amount)}</b></div>
+    <div class="t"><div class="between">${ocr?`<input class="imp-title" data-imp-title="${r.id}" value="${esc(r.title)}" aria-label="Descrição">${r.inst?` <span class="tag">${r.inst}</span>`:''}`:`<b>${esc(r.title)}${r.inst?` <span class="tag">${r.inst}</span>`:''}</b>`}${ocr?`<input class="imp-amt" inputmode="decimal" data-imp-amt="${r.id}" value="${fmtNum(r.amount)}" aria-label="Valor">`:`<b>${brl(r.amount)}</b>`}</div>
       <small class="muted">${r.date.slice(8)}/${r.date.slice(5,7)}${r.dup?` · <span class="warn">${r.dup}</span>`:''}</small>
       <select class="imp-cat" data-imp-cat="${r.id}"><option value="">Escolher categoria…</option>${catOpts(r.cat)}</select>
       ${r.inst&&r.k<r.n?`<label class="small muted" style="display:block;margin-top:4px"><input type="checkbox" data-imp-fut="${r.id}" ${r.future?'checked':''}> também lançar as ${r.n-r.k} parcela(s) restante(s) nas próximas faturas</label>`:''}</div></div>`).join('')||'<div class="empty">Tudo classificado 🎉</div>'}</div></div>
   <div class="between" style="margin:12px 0"><span class="muted">${sel.length} selecionados</span><b>${brl(sum)}</b></div>
   <div class="btns"><button class="btn ghost" data-act="close">Cancelar</button><button class="btn" data-act="imp-go" ${miss?'style="opacity:.55"':''}>${miss?`Faltam ${miss} categorias`:`Importar ${sel.length}`}</button></div>`);
 }
-function importGo(){
-  const d=imp, sel=d.rows.filter(r=>r.include);
-  if(!sel.length) return toast('Nenhum lançamento selecionado');
-  if(sel.some(r=>!r.cat)){ d.only=true; drawImportReview(); return toast('Classifique todos os lançamentos marcados'); }
-  S.rules = S.rules||{}; let n=0;
-  for(const r of sel){
-    S.rules[r.mk] = r.cat;
-    const grp = r.future ? uid() : undefined;
-    const mk = (extra)=>({id:uid(),date:r.date,type:'out',cat:r.cat,amount:r.amount,pay:d.pay,note:r.title,...extra});
-    S.tx.push(mk({comp:d.comp, inst:r.inst||undefined, grp, imp:r.key})); n++;
-    if(r.future) for(let j=r.k+1;j<=r.n;j++){ S.tx.push(mk({comp:shiftYm(d.comp,j-r.k), inst:j+'/'+r.n, grp, imp:`F|${r.mk}|${j}/${r.n}|${r.amount}`})); n++; }
+
+// ---------- Fatura do cartão como um único lançamento ----------
+const faturaDate = (payId, ym) => { const p=pay(payId), last=new Date(+ym.slice(0,4),+ym.slice(5),0).getDate(); return ym+'-'+String(p.due?Math.min(p.due,last):last).padStart(2,'0'); };
+const paidInfo = (payId, ym) => (S.paid||{})[payId+'|'+ym];
+const dm = d => d.slice(8)+'/'+d.slice(5,7);
+function fatRow(e){
+  const p=pay(e.pay), paid=paidInfo(e.pay,ui.ym);
+  return `<button class="item" data-act="go-pay" data-id="${e.pay}"><span class="ico" style="background:var(--line)">${esc(p.ico)}</span>
+    <span class="t"><b>Fatura ${esc(p.name)}</b><small class="muted">${e.n} compra(s) · ${p.due?'vence '+dm(e.date):'fatura de '+ymLabel(ui.ym)}${paid?` · <span class="in">✓ paga em ${dm(paid)}</span>`:''}</small></span>
+    <span class="amt out">− ${brl(e.total)} ›</span></button>`;
+}
+function openFatPay(){
+  const f=ui.f.pay, total=monthTx(ui.ym).filter(t=>t.pay===f&&t.type==='out').reduce((a,t)=>a+t.amount,0);
+  openSheet(`<h2>💳 Pagamento da fatura</h2>
+  <p class="muted" style="margin:0 0 12px">${esc(pay(f).name)} · <span style="text-transform:capitalize">${ymLabel(ui.ym)}</span> · <b>${brl(total)}</b></p>
+  <div class="field"><label>Data do pagamento</label><input type="date" id="fp-date" value="${pay(f).due?faturaDate(f,ui.ym):today()}"></div>
+  <p class="small muted">Os gastos já contam no mês da fatura; aqui você só registra que ela foi paga.</p>
+  <div class="btns"><button class="btn ghost" data-act="close">Cancelar</button><button class="btn" data-act="fat-save">Marcar como paga</button></div>`);
+}
+
+function viewTx(){
+  const f = ui.f||{}, q = ui.q.trim().toLowerCase(), raw = !!(f.cat||f.pay||f.future||q), active = f.cat||f.pay||f.future;
+  let list = f.future ? [1,2,3].flatMap(k=>monthTx(shiftYm(ui.ym,k))).filter(t=>t.type==='out'&&isCard(t.pay)) : monthTx(ui.ym);
+  if(f.cat) list = list.filter(t=>t.cat===f.cat);
+  if(f.pay) list = list.filter(t=>t.pay===f.pay);
+  if(ui.filter!=='all') list = list.filter(t=>t.type===ui.filter);
+  if(q) list = list.filter(t=> (t.note||'').toLowerCase().includes(q) || cat(t.cat).name.toLowerCase().includes(q));
+  const sum = list.reduce((a,t)=>a+(t.type==='in'?0:t.amount),0);
+  const key = t => f.future ? cm(t) : t.date;
+  let entries;
+  if(raw) entries = list.map(t=>({k:'tx',t,date:key(t)}));
+  else{
+    const isC = t=>t.type==='out'&&isCard(t.pay), byPay={};
+    list.filter(isC).forEach(t=>{ const g=byPay[t.pay]=byPay[t.pay]||{k:'fat',pay:t.pay,n:0,total:0,date:faturaDate(t.pay,ui.ym)}; g.n++; g.total+=t.amount; });
+    entries = [...list.filter(t=>!isC(t)).map(t=>({k:'tx',t,date:t.date})), ...Object.values(byPay)];
   }
-  save(); closeSheet(); ui.tab='tx'; ui.ym=d.comp; render(); toast(`${n} lançamentos importados na fatura de ${ymLabel(d.comp)} ✓`);
+  entries.sort(f.future ? (a,b)=>a.date.localeCompare(b.date) || (b.t?b.t.date:'').localeCompare(a.t?a.t.date:'') : (a,b)=>b.date.localeCompare(a.date) || (a.k==='fat'?-1:1));
+  const groups = {}; entries.forEach(e=>(groups[e.date]=groups[e.date]||[]).push(e));
+  const F=[['all','Todos'],['out','Saídas'],['in','Entradas'],['inv','Investimentos']];
+  const title = f.future ? 'Compras nas próximas faturas' : [f.cat&&cat(f.cat).name, f.pay&&('Fatura '+pay(f.pay).name)].filter(Boolean).join(' · ');
+  const paid = f.pay && paidInfo(f.pay, ui.ym);
+  return `
+  ${active?`<div class="card-box"><button class="chip" data-act="back-f" style="margin-bottom:8px">‹ Voltar</button>
+    <div class="between"><div><b>${esc(title)}</b><div class="small muted">${f.future?'próximos 3 meses':ymLabel(ui.ym)} · ${list.length} lançamento(s)</div></div><b style="font-size:1.2rem">${brl(sum)}</b></div>
+    ${f.pay&&!f.cat?`<div class="between" style="margin-top:8px">${paid?`<span class="in"><b>✓ Fatura paga em ${dm(paid)}</b></span><button class="chip" data-act="fat-undo">Desfazer</button>`:`<span class="muted small">${pay(f.pay).due?'Vence em '+dm(faturaDate(f.pay,ui.ym)):'Em aberto'}</span><button class="chip on" data-act="fat-pay">Marcar como paga</button>`}</div>`:''}
+    <button class="chip" data-act="clear-f" style="margin-top:8px">✕ Ver todos os lançamentos</button></div>`
+   :`<button class="btn ghost" data-act="imp-open">📥 Importar fatura do cartão (PDF)</button>`}
+  <input type="search" id="q" placeholder="🔍 Buscar lançamento ou categoria" value="${esc(ui.q)}">
+  <div class="chips">${F.map(([k,l])=>`<button class="chip ${ui.filter===k?'on':''}" data-filter="${k}">${l}</button>`).join('')}</div>
+  ${entries.length? Object.entries(groups).map(([g,items])=>`<div class="daytitle">${f.future?`<span style="text-transform:capitalize">${ymLabel(g)}</span> · ${brl(items.reduce((a,e)=>a+e.t.amount,0))}`:fmtDay(g)}</div><div class="card"><div class="list">${items.map(e=>e.k==='fat'?fatRow(e):itemRow(e.t)).join('')}</div></div>`).join('')
+   : `<div class="card empty"><b>🧾</b>Nenhum lançamento encontrado.</div>`}`;
 }
 
 // ---------- Eventos ----------
@@ -698,6 +826,9 @@ document.addEventListener('click', e=>{
     case 'go-future': ui.f={future:true}; ui.back='home'; ui.filter='all'; ui.q=''; ui.tab='tx'; render(); window.scrollTo(0,0); break;
     case 'back-f': ui.f={}; ui.tab=ui.back||'home'; render(); window.scrollTo(0,0); break;
     case 'clear-f': ui.f={}; render(); break;
+    case 'fat-pay': openFatPay(); break;
+    case 'fat-save': { const dt=$('#fp-date').value; if(!dt) return toast('Informe a data'); S.paid=S.paid||{}; S.paid[ui.f.pay+'|'+ui.ym]=dt; save(); closeSheet(); render(); toast('Fatura marcada como paga ✓'); break; }
+    case 'fat-undo': if(S.paid) delete S.paid[ui.f.pay+'|'+ui.ym]; save(); render(); break;
     case 'reimb-open': openReimb(); break;
     case 'rb-all': { const l=pendingReimb(); rb.date=$('#rb-date').value||rb.date; rb.sel = rb.sel.size===l.length ? new Set() : new Set(l.map(t=>t.id)); drawReimb(); break; }
     case 'rb-go': reimbGo(); break;
@@ -733,17 +864,25 @@ document.addEventListener('click', e=>{
     case 'close': closeSheet(); break;
   }
 });
-document.addEventListener('input', e=>{ if(e.target.id==='f-amount') updInstInfo(); });
+document.addEventListener('input', e=>{
+  if(e.target.id==='f-amount') updInstInfo();
+  if(e.target.id==='imp-total'){
+    const v=parseMoney(e.target.value); imp.total = (e.target.value.trim()&&!isNaN(v)) ? v : null;
+    const ck=impCheck(), el=$('#imp-check'); if(el){ el.className='small '+ck.cls; el.textContent=ck.txt; }
+  }
+});
 document.addEventListener('change', e=>{
   const t=e.target;
   if(t.id==='f-pdf'){ const f=t.files[0]; if(f) importFile(f); return; }
   if(t.id==='rb-date'){ rb.date=t.value; return; }
   if(t.dataset.rbId){ rb.date=$('#rb-date').value||rb.date; t.checked ? rb.sel.add(t.dataset.rbId) : rb.sel.delete(t.dataset.rbId); drawReimb(); return; }
+  if(t.dataset.impTitle!==undefined){ imp.rows[+t.dataset.impTitle].title=t.value.trim()||imp.rows[+t.dataset.impTitle].title; return; }
+  if(t.dataset.impAmt!==undefined){ const v=parseMoney(t.value); if(v>0) imp.rows[+t.dataset.impAmt].amount=Math.round(v*100)/100; drawImportReview(); return; }
   if(t.dataset.impInc!==undefined){ imp.rows[+t.dataset.impInc].include=t.checked; drawImportReview(); return; }
   if(t.dataset.impFut!==undefined){ imp.rows[+t.dataset.impFut].future=t.checked; return; }
   if(t.dataset.impCat!==undefined){
     const r=imp.rows[+t.dataset.impCat]; r.cat=t.value;
-    if(t.value) imp.rows.forEach(o=>{ if(o.mk===r.mk && !o.cat) o.cat=t.value; }); // mesmo estabelecimento: aplica junto
+    if(t.value) imp.rows.forEach(o=>{ if(rk(o)===rk(r) && !o.cat) o.cat=t.value; }); // mesmo estabelecimento: aplica junto
     drawImportReview(); return;
   }
   if(e.target.id==='f-inst'){ readDraft(); updInstInfo(); return; }
